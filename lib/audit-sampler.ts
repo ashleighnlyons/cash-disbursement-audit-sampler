@@ -451,7 +451,12 @@ function addSummarySheet(workbook: XLSX.WorkBook, data: Row[]): void {
   if (worksheet.B25) worksheet.B25.z = "mmm d, yyyy h:mm AM/PM";
   for (let row = 12; row <= 25; row += 1) {
     const label = worksheet[`A${row}`];
-    if (label) label.s = { font: { bold: true, color: { rgb: "44546A" } }, fill: { fgColor: { rgb: row % 2 ? "F7F9FC" : "EAF2F8" } };
+    if (label) {
+      label.s = {
+        font: { bold: true, color: { rgb: "44546A" } },
+        fill: { fgColor: { rgb: row % 2 ? "F7F9FC" : "EAF2F8" } },
+      };
+    }
   }
   XLSX.utils.book_append_sheet(workbook, worksheet, "Selection Summary");
 }
