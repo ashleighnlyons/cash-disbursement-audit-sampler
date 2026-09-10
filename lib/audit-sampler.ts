@@ -22,7 +22,8 @@ export type AuditSamplerResult = {
   sampleCount: number;
 };
 
-type Row = (string | number | boolean | Date | null)[];
+type Cell = string | number | boolean | Date | null;
+type Row = Cell[];
 
 type Detail = {
   sourceRow: number;
@@ -34,20 +35,20 @@ type Detail = {
   batch: string;
   property: string;
   invoiceNo: string;
-  invoiceDate: unknown;
-  period: unknown;
+  invoiceDate: Cell;
+  period: Cell;
   paymentMethod: string;
   amount: number;
   checkControl: string;
   checkNo: string;
-  checkDate: unknown;
+  checkDate: Cell;
   notes: string;
 };
 
 type Payment = {
   checkControl: string;
   checkNo: string;
-  checkDate: unknown;
+  checkDate: Cell;
   paymentMethod: string;
   payees: string;
   payableControls: string;
