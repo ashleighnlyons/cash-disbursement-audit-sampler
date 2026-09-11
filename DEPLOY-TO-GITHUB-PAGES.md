@@ -29,7 +29,7 @@ Add a custom domain through **Settings > Pages** after the first successful depl
 
 1. Make the change on a branch.
 2. Run `npm ci`, `npm run typecheck`, and `npm run build`.
-3. Test a known Yardi report and a known AppFolio report.
+3. Test known Yardi, AppFolio, and OneSite reports.
 4. Merge the change into `main`.
 5. GitHub Pages publishes the updated static site automatically.
 

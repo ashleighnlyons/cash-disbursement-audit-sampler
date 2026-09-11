@@ -1,6 +1,6 @@
 # Cash Disbursement Audit Sampler
 
-A 100% client-side static web application for generating reproducible cash-disbursement audit selections from Yardi and AppFolio Excel reports.
+A 100% client-side static web application for generating reproducible cash-disbursement audit selections from Yardi, AppFolio, and OneSite Excel reports.
 
 ## Privacy architecture
 
@@ -21,6 +21,7 @@ The selected source report and generated workbook never leave the user's device.
 
 - Yardi Expense Distribution (Paid Only)
 - AppFolio Check Register Detail (Enhanced)
+- OneSite Check Register Detail
 - Standard 10% sampling, rounded up and capped at 25
 - HUD Handbook 2000.04 profiles
 - Partial-year population annualization
@@ -31,8 +32,8 @@ The selected source report and generated workbook never leave the user's device.
 - Optional dollar threshold
 - Deterministic SHA-256 selection ranking
 - Selection Summary, Selections, Selected Detail Lines, and Excluded Disbursements worksheets
-- Yardi-specific Payable Control(s) output column
-- AppFolio-specific output layout
+- Uniform Selections worksheet columns across all three source systems
+- Unavailable source fields remain in place and may be hidden so downstream workpapers can use one import layout
 - Exception Status column
 
 ## Requirements
@@ -121,7 +122,7 @@ cash-disbursement-audit-sampler/
 All former API logic now lives in `lib/audit-sampler.ts`, including:
 
 - Workbook parsing
-- Yardi and AppFolio normalization
+- Yardi, AppFolio, and OneSite normalization
 - Disbursement grouping
 - Exclusion classification
 - Annualization
@@ -141,4 +142,4 @@ All former API logic now lives in `lib/audit-sampler.ts`, including:
 - Static-host path configuration: `next.config.ts`
 - GitHub deployment: `.github/workflows/deploy.yml`
 
-Before publishing a methodology change, test both source systems and compare the output against an approved workbook.
+Before publishing a methodology change, test all three source systems and compare the output against an approved workbook.

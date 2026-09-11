@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 
-export type SourceSystem = "yardi" | "appfolio";
+export type SourceSystem = "yardi" | "appfolio" | "onesite";
 export type AuditType = "standard" | "hud";
 export type HudProfile = "low-5" | "low-10" | "high-5" | "high-10";
 
@@ -94,7 +94,11 @@ export async function generateAuditWorkbook(
 
   let details: Detail[];
   try {
-    details = sourceSystem === "appfolio" ? parseAppFolio(rows) : parseYardi(rows);
+    details = sourceSystem === "appfolio"
+      ? parseAppFolio(rows)
+      : sourceSystem === "onesite"
+        ? parseOneSite(rows)
+        : parseYardi(rows);
   } catch {
     throw new Error("The workbook could not be processed. Confirm the selected accounting system matches the unmodified report and try again.");
   }
@@ -155,7 +159,11 @@ export async function generateAuditWorkbook(
   const workbook = XLSX.utils.book_new();
   addSummarySheet(workbook, [
     ["Cash Disbursement Audit Selections"],
-    [sourceSystem === "appfolio" ? "AppFolio · Check Register Detail (Enhanced)" : "Yardi · Expense Distribution (Paid Only)"],
+    [sourceSystem === "appfolio"
+      ? "AppFolio · Check Register Detail (Enhanced)"
+      : sourceSystem === "onesite"
+        ? "OneSite · Check Register Detail"
+        : "Yardi · Expense Distribution (Paid Only)"],
     [],
     ["Population Reconciliation", "Count", "Amount"],
     ["Total unique disbursements", population.length, money(sum(population))],
@@ -165,14 +173,18 @@ export async function generateAuditWorkbook(
     ["Final selections", sampleCount],
     [],
     ["Methodology"],
-    ["Source system", sourceSystem === "appfolio" ? "AppFolio" : "Yardi"],
+    ["Source system", sourceSystem === "appfolio" ? "AppFolio" : sourceSystem === "onesite" ? "OneSite" : "Yardi"],
     ["Client type", auditType === "hud" ? "HUD client" : "Standard client"],
     ["Sample-size rule", method],
     ["HUD sampling profile", profile],
     ["Months included in report", reportMonths],
     ["Annualization factor", 12 / reportMonths],
     ["Annualization formula", `Actual eligible population × 12 ÷ ${reportMonths}`],
-    ["Sampling unit", sourceSystem === "appfolio" ? "One AppFolio payment header" : "Unique Check Control"],
+    ["Sampling unit", sourceSystem === "appfolio"
+      ? "One AppFolio payment header"
+      : sourceSystem === "onesite"
+        ? "One OneSite payment header"
+        : "Unique Check Control"],
     ["Selection method", "Deterministic hash-based random selection"],
     ["Minimum amount threshold", minimumAmount > 0 ? minimumAmount : "Not applied"],
     ["Exclusions", "Carter & Company fees; utilities; mortgage and debt service; tenant utility reimbursements"],
@@ -181,17 +193,25 @@ export async function generateAuditWorkbook(
     ["Generated", new Date()],
   ]);
 
-  const selectionHeaders = sourceSystem === "yardi"
-    ? ["Selection #", "Check Control", "Check #", "Check Date", "Payee(s)", "Disbursement Amount", "Payable Control(s)", "Invoice #(s)", "Account(s)", "Exception Status"]
-    : ["Selection #", "Check Control", "Check #", "Check Date", "Payee(s)", "Disbursement Amount", "Invoice #(s)", "Account(s)", "Exception Status"];
-  const selectionRows: Row[] = sourceSystem === "yardi"
-    ? selected.map((payment, index) => [index + 1, payment.checkControl, payment.checkNo, payment.checkDate, payment.payees, payment.amount, payment.payableControls, payment.invoices, payment.accounts, ""])
-    : selected.map((payment, index) => [index + 1, payment.checkControl, payment.checkNo, payment.checkDate, payment.payees, payment.amount, payment.invoices, payment.accounts, ""]);
+  const selectionHeaders = ["Selection #", "Check Control", "Check #", "Check Date", "Payee(s)", "Disbursement Amount", "Payable Control(s)", "Invoice #(s)", "Account(s)", "Exception Status"];
+  const selectionRows: Row[] = selected.map((payment, index) => [
+    index + 1,
+    payment.checkControl,
+    payment.checkNo,
+    payment.checkDate,
+    payment.payees,
+    payment.amount,
+    payment.payableControls,
+    payment.invoices,
+    payment.accounts,
+    "",
+  ]);
   addSheet(
     workbook,
     "Selections",
     [selectionHeaders, ...selectionRows],
-    sourceSystem === "yardi" ? [12, 15, 12, 14, 28, 18, 32, 32, 42, 20] : [12, 15, 12, 14, 28, 18, 32, 42, 20],
+    [12, 15, 12, 14, 28, 18, 32, 32, 42, 20],
+    sourceSystem === "onesite" ? [6] : [],
   );
 
   const detailHeaders = ["Selection #", "Source Row", "Account Code", "Account Name", "Payee Code", "Payee Name", "Payable Control", "Batch", "Property", "Invoice #", "Invoice Date", "Period", "Payment Method", "Amount", "Check Control", "Check #", "Check Date", "Notes"];
@@ -224,9 +244,12 @@ export async function generateAuditWorkbook(
     .map((payment) => [payment.checkControl, payment.checkNo, payment.checkDate, payment.paymentMethod, payment.payees, payment.amount, payment.lineCount, payment.exclusion, payment.accounts, payment.sourceRows]);
   addSheet(workbook, "Excluded Disbursements", [excludedHeaders, ...excludedRows], [15, 12, 14, 15, 28, 18, 13, 28, 44, 24]);
 
-  const clientName = sourceSystem === "appfolio"
+  const rawClientName = sourceSystem === "appfolio"
     ? appFolioClientName(rows)
-    : stringValue(rows[1]?.[0]).replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
+    : sourceSystem === "onesite"
+      ? oneSiteClientName(rows)
+      : stringValue(rows[1]?.[0]);
+  const clientName = rawClientName.replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
   const filename = `Cash_Disbursement_Audit_Selections${clientName ? `_${clientName}` : ""}.xlsx`;
   const output = XLSX.write(workbook, { type: "array", bookType: "xlsx", compression: true }) as ArrayBuffer;
   const blob = new Blob([output], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -362,11 +385,96 @@ function parseAppFolio(rows: Row[]): Detail[] {
   return details;
 }
 
+function parseOneSite(rows: Row[]): Detail[] {
+  const headerIndex = rows.findIndex((row) => stringValue(row[0]) === "Bank"
+    && stringValue(row[1]) === "Date"
+    && stringValue(row[3]) === "AP Invoice No"
+    && stringValue(row[7]) === "Document No"
+    && stringValue(row[8]) === "Amount"
+    && stringValue(row[9]) === "Amount Applied");
+  if (headerIndex < 0) throw new Error("Not a OneSite Check Register Detail report");
+
+  const details: Detail[] = [];
+  let bank = "";
+  let checkControl = "";
+  let checkNo = "";
+  let checkDate: Cell = null;
+  let paymentMethod = "";
+  let invoiceDate: Cell = null;
+  let invoiceNo = "";
+
+  for (let index = headerIndex + 1; index < rows.length; index += 1) {
+    const row = rows[index];
+    const sourceRow = index + 1;
+    const amount = Number(row[8]);
+    const amountApplied = Number(row[9]);
+    const hasDetail = Boolean(row[4])
+      && row[8] != null
+      && row[9] != null
+      && Number.isFinite(amount)
+      && Number.isFinite(amountApplied);
+
+    if (row[0] && /^Account No:/i.test(stringValue(row[1]))) {
+      bank = uniqueValues([stringValue(row[0]), stringValue(row[1])]);
+      continue;
+    }
+    if (!hasDetail) continue;
+
+    const documentNo = stringValue(row[7]);
+    const startsPayment = Boolean(row[1]) || Boolean(documentNo && documentNo !== checkNo) || !checkControl;
+    if (startsPayment) {
+      checkNo = documentNo;
+      checkControl = documentNo || `EFT-${sourceRow}`;
+      checkDate = row[1];
+      paymentMethod = stringValue(row[6]);
+      invoiceDate = row[2];
+      invoiceNo = stringValue(row[3]);
+    } else {
+      if (row[2] != null) invoiceDate = row[2];
+      if (row[3] != null) invoiceNo = stringValue(row[3]);
+    }
+
+    const [payeeCode, payeeName] = splitCodeAndLabel(row[4]);
+    const [accountCode, accountName] = splitCodeAndLabel(row[5]);
+    details.push({
+      sourceRow,
+      accountCode,
+      accountName,
+      payeeCode,
+      payeeName,
+      payableControl: "",
+      batch: "",
+      property: stringValue(row[13]),
+      invoiceNo,
+      invoiceDate,
+      period: null,
+      paymentMethod,
+      amount: amountApplied,
+      checkControl,
+      checkNo,
+      checkDate,
+      notes: uniqueValues([stringValue(row[11]), bank]),
+    });
+  }
+  return details;
+}
+
+function splitCodeAndLabel(value: Cell): [string, string] {
+  const text = stringValue(value);
+  const separator = text.indexOf("--");
+  if (separator < 0) return ["", text];
+  return [text.slice(0, separator).trim(), text.slice(separator + 2).trim()];
+}
+
 function appFolioClientName(rows: Row[]): string {
   const rawName = stringValue(rows.find((row) => stringValue(row[0]).startsWith("Properties:"))?.[0])
     .replace(/^Properties:\s*/, "")
     .split(" - ")[0];
   return rawName.replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "");
+}
+
+function oneSiteClientName(rows: Row[]): string {
+  return stringValue(rows.find((row) => stringValue(row[0]) === "Company Name:")?.[1]);
 }
 
 function exclusionFor(detail: Detail): string {
@@ -413,9 +521,9 @@ function sum(items: Payment[]): number {
   return items.reduce((total, payment) => total + payment.amount, 0);
 }
 
-function addSheet(workbook: XLSX.WorkBook, name: string, data: Row[], widths: number[]): void {
+function addSheet(workbook: XLSX.WorkBook, name: string, data: Row[], widths: number[], hiddenColumns: number[] = []): void {
   const worksheet = XLSX.utils.aoa_to_sheet(data, { cellDates: true });
-  worksheet["!cols"] = widths.map((width) => ({ wch: width }));
+  worksheet["!cols"] = widths.map((width, index) => ({ wch: width, hidden: hiddenColumns.includes(index) }));
   if (data.length > 1) {
     worksheet["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(Math.max(0, widths.length - 1))}${data.length}` };
   }
