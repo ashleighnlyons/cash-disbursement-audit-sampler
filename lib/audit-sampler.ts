@@ -62,6 +62,23 @@ type Payment = {
   exclusion: string;
 };
 
+type InvoiceBreakout = Pick<Detail,
+  | "sourceRow"
+  | "accountCode"
+  | "accountName"
+  | "payeeCode"
+  | "payeeName"
+  | "payableControl"
+  | "batch"
+  | "property"
+  | "invoiceNo"
+  | "invoiceDate"
+  | "period"
+  | "paymentMethod"
+  | "amount"
+  | "notes"
+>;
+
 const stringValue = (value: unknown) => value == null ? "" : String(value).trim();
 const uniqueValues = (items: string[]) => [...new Set(items.filter(Boolean))].join("; ");
 const money = (value: number) => Math.round(value * 100) / 100;
@@ -193,28 +210,45 @@ export async function generateAuditWorkbook(
     ["Generated", new Date()],
   ]);
 
-  const selectionHeaders = ["Selection #", "Check Control", "Check #", "Check Date", "Payee(s)", "Disbursement Amount", "Payable Control(s)", "Invoice #(s)", "Account(s)", "Exception Status"];
-  const selectionRows: Row[] = selected.map((payment, index) => [
-    index + 1,
-    payment.checkControl,
-    payment.checkNo,
-    payment.checkDate,
-    payment.payees,
-    payment.amount,
-    payment.payableControls,
-    payment.invoices,
-    payment.accounts,
-    "",
-  ]);
-  addSheet(
+  const detailHeaders = ["Selection #", "Source Row", "Account Code", "Account Name", "Payee Code", "Payee Name", "Payable Control", "Batch", "Property", "Invoice #", "Invoice Date", "Period", "Payment Method", "Amount", "Check Control", "Check #", "Check Date", "Notes"];
+  const invoiceRows: Row[] = [];
+  selected.forEach((payment, index) => {
+    const invoices = invoiceBreakout(payment);
+    invoices.forEach((invoice, invoiceIndex) => invoiceRows.push([
+      invoices.length === 1 ? index + 1 : `${index + 1}${letterSuffix(invoiceIndex)}`,
+      invoice.sourceRow,
+      invoice.accountCode,
+      invoice.accountName,
+      invoice.payeeCode,
+      invoice.payeeName,
+      invoice.payableControl,
+      invoice.batch,
+      invoice.property,
+      invoice.invoiceNo,
+      invoice.invoiceDate,
+      invoice.period,
+      invoice.paymentMethod,
+      invoice.amount,
+      payment.checkControl,
+      payment.checkNo,
+      payment.checkDate,
+      invoice.notes,
+    ]));
+  });
+  const selectionsSheet = addSheet(
     workbook,
     "Selections",
-    [selectionHeaders, ...selectionRows],
-    [12, 15, 12, 14, 28, 18, 32, 32, 42, 20],
-    sourceSystem === "onesite" ? [6] : [],
+    [detailHeaders, ...invoiceRows],
+    [13, 12, 15, 29, 16, 29, 17, 12, 13, 30, 15, 13, 16, 17, 16, 13, 15, 43],
+    [4],
   );
+  for (let row = 2; row <= invoiceRows.length + 1; row += 1) {
+    for (const column of ["K", "Q"]) {
+      const cell = selectionsSheet[`${column}${row}`];
+      if (cell?.v instanceof Date) cell.z = "mm-dd-yy";
+    }
+  }
 
-  const detailHeaders = ["Selection #", "Source Row", "Account Code", "Account Name", "Payee Code", "Payee Name", "Payable Control", "Batch", "Property", "Invoice #", "Invoice Date", "Period", "Payment Method", "Amount", "Check Control", "Check #", "Check Date", "Notes"];
   const detailRows: Row[] = [];
   selected.forEach((payment, index) => payment.lines.forEach((detail) => detailRows.push([
     index + 1,
@@ -517,17 +551,71 @@ function dateValue(value: unknown): number {
   return Date.parse(stringValue(value)) || 0;
 }
 
+function invoiceBreakout(payment: Payment): InvoiceBreakout[] {
+  const groups = new Map<string, Detail[]>();
+  for (const line of payment.lines) {
+    // Blank invoice numbers are not reliable grouping keys, so preserve each source line.
+    const key = line.invoiceNo
+      ? JSON.stringify([
+        line.invoiceNo,
+        dateValue(line.invoiceDate),
+        line.accountCode,
+        line.accountName,
+        line.payeeCode,
+        line.payeeName,
+        line.batch,
+        line.property,
+        stringValue(line.period),
+      ])
+      : `source-row:${line.sourceRow}`;
+    const group = groups.get(key);
+    if (group) group.push(line);
+    else groups.set(key, [line]);
+  }
+
+  return [...groups.values()].map((lines) => {
+    const first = lines[0];
+    return {
+      sourceRow: Math.min(...lines.map((line) => line.sourceRow)),
+      accountCode: first.accountCode,
+      accountName: first.accountName,
+      payeeCode: first.payeeCode,
+      payeeName: first.payeeName,
+      payableControl: uniqueValues(lines.map((line) => line.payableControl)),
+      batch: uniqueValues(lines.map((line) => line.batch)),
+      property: uniqueValues(lines.map((line) => line.property)),
+      invoiceNo: first.invoiceNo,
+      invoiceDate: first.invoiceDate,
+      period: first.period,
+      paymentMethod: uniqueValues(lines.map((line) => line.paymentMethod)),
+      amount: money(lines.reduce((total, line) => total + line.amount, 0)),
+      notes: uniqueValues(lines.map((line) => line.notes)),
+    };
+  }).sort((left, right) => left.sourceRow - right.sourceRow);
+}
+
+function letterSuffix(index: number): string {
+  let value = index;
+  let suffix = "";
+  do {
+    suffix = String.fromCharCode(97 + (value % 26)) + suffix;
+    value = Math.floor(value / 26) - 1;
+  } while (value >= 0);
+  return suffix;
+}
+
 function sum(items: Payment[]): number {
   return items.reduce((total, payment) => total + payment.amount, 0);
 }
 
-function addSheet(workbook: XLSX.WorkBook, name: string, data: Row[], widths: number[], hiddenColumns: number[] = []): void {
+function addSheet(workbook: XLSX.WorkBook, name: string, data: Row[], widths: number[], hiddenColumns: number[] = []): XLSX.WorkSheet {
   const worksheet = XLSX.utils.aoa_to_sheet(data, { cellDates: true });
   worksheet["!cols"] = widths.map((width, index) => ({ wch: width, hidden: hiddenColumns.includes(index) }));
   if (data.length > 1) {
     worksheet["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(Math.max(0, widths.length - 1))}${data.length}` };
   }
   XLSX.utils.book_append_sheet(workbook, worksheet, name);
+  return worksheet;
 }
 
 function addSummarySheet(workbook: XLSX.WorkBook, data: Row[]): void {
