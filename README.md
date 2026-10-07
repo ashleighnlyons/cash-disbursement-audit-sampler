@@ -29,9 +29,10 @@ The selected source report and generated workbook never leave the user's device.
 - Utilities exclusion
 - Mortgage and debt-service exclusion
 - Tenant utility-reimbursement exclusion
+- Optional vendor-name exclusion with punctuation-insensitive and close-spelling matching
 - Optional dollar threshold
 - Deterministic SHA-256 selection ranking
-- Selection Summary, Selections, Selected Detail Lines, and Excluded Disbursements worksheets
+- Selection Summary, Selections, Selections - Invoice breakout, Selected Detail Lines, and Excluded Disbursements worksheets
 - Uniform Selections worksheet columns across all three source systems
 - Unavailable source fields remain in place and may be hidden so downstream workpapers can use one import layout
 - Exception Status column

@@ -10,6 +10,7 @@ export type AuditSamplerOptions = {
   hudProfile: HudProfile;
   minimumAmount: number;
   reportMonths: number;
+  excludedVendorNames: string;
 };
 
 export type AuditSamplerResult = {
@@ -99,6 +100,7 @@ export async function generateAuditWorkbook(
   const hudProfile = options.hudProfile;
   const minimumAmount = Math.max(0, Number(options.minimumAmount) || 0);
   const reportMonths = Math.min(12, Math.max(1, Math.round(Number(options.reportMonths) || 12)));
+  const excludedVendorNames = parseExcludedVendorNames(options.excludedVendorNames);
 
   let rows: Row[];
   try {
@@ -134,6 +136,11 @@ export async function generateAuditWorkbook(
   for (const [checkControl, lines] of grouped) {
     const amount = money(lines.reduce((total, line) => total + line.amount, 0));
     const categories = new Set(lines.map(exclusionFor).filter(Boolean));
+    for (const vendorName of excludedVendorNames) {
+      if (lines.some((line) => vendorNameMatches(line.payeeName, vendorName))) {
+        categories.add(`Vendor match: ${vendorName}`);
+      }
+    }
     if (minimumAmount > 0 && amount < minimumAmount) {
       categories.add(`Below $${minimumAmount.toFixed(2)} threshold`);
     }
@@ -204,7 +211,13 @@ export async function generateAuditWorkbook(
         : "Unique Check Control"],
     ["Selection method", "Deterministic hash-based random selection"],
     ["Minimum amount threshold", minimumAmount > 0 ? minimumAmount : "Not applied"],
-    ["Exclusions", "Carter & Company fees; utilities; mortgage and debt service; tenant utility reimbursements"],
+    ["Exclusions", uniqueValues([
+      "Carter & Company fees",
+      "utilities",
+      "mortgage and debt service",
+      "tenant utility reimbursements",
+      excludedVendorNames.length ? `vendor matches: ${excludedVendorNames.join(", ")}` : "",
+    ])],
     ["HUD source", "HUD Handbook 2000.04 REV-2, Appendix A - Attribute Sampling"],
     ["Source file", file.name],
     ["Generated", new Date()],
@@ -530,6 +543,72 @@ function appFolioClientName(rows: Row[]): string {
 
 function oneSiteClientName(rows: Row[]): string {
   return stringValue(rows.find((row) => stringValue(row[0]) === "Company Name:")?.[1]);
+}
+
+function parseExcludedVendorNames(value: string): string[] {
+  return [...new Set(stringValue(value)
+    .split(/[,;\n]+/)
+    .map((name) => name.trim())
+    .filter(Boolean))];
+}
+
+function normalizeVendorName(value: string): string {
+  const aliases: Record<string, string> = {
+    assoc: "association",
+    mgmt: "management",
+    prop: "properties",
+    svc: "services",
+    svcs: "services",
+  };
+  const ignored = new Set(["and", "co", "company", "corp", "corporation", "inc", "llc", "llp", "lp", "lllp", "ltd", "pa", "pc"]);
+  return stringValue(value)
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((token) => aliases[token] || token)
+    .filter((token) => token && !ignored.has(token))
+    .join(" ");
+}
+
+function vendorNameMatches(payeeName: string, requestedName: string): boolean {
+  const payee = normalizeVendorName(payeeName);
+  const requested = normalizeVendorName(requestedName);
+  if (!payee || !requested) return false;
+
+  const payeeCompact = payee.replace(/\s+/g, "");
+  const requestedCompact = requested.replace(/\s+/g, "");
+  if (requestedCompact.length >= 4
+    && (payeeCompact.includes(requestedCompact) || requestedCompact.includes(payeeCompact))) {
+    return true;
+  }
+
+  const payeeTokens = payee.split(" ");
+  const requestedTokens = requested.split(" ");
+  return requestedTokens.every((requestedToken) => payeeTokens.some((payeeToken) => {
+    if (requestedToken === payeeToken) return true;
+    if (requestedToken.length < 5 || payeeToken.length < 5) return false;
+    return similarity(requestedToken, payeeToken) >= 0.82;
+  }));
+}
+
+function similarity(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    let diagonal = previous[0];
+    previous[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const above = previous[rightIndex];
+      previous[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + 1,
+        diagonal + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+      diagonal = above;
+    }
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
 }
 
 function exclusionFor(detail: Detail): string {

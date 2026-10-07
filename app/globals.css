@@ -2,3 +2,5 @@
 :root{--font-sans:Arial,"Helvetica Neue",sans-serif;--font-serif:Georgia,"Times New Roman",serif}
 .methodPicker.systemPicker{grid-template-columns:repeat(3,1fr)}
 @media(max-width:800px){.methodPicker.systemPicker{grid-template-columns:1fr}}
+/* Vendor exclusion input */
+.field>input[type="text"]{width:100%;height:42px;border:1px solid #c9c3b7;background:#fff;padding:0 10px;color:var(--ink);font-size:12px}.field>input[type="text"]::placeholder{color:#8b9397}.vendorField{margin-bottom:18px}.vendorField small{line-height:1.45}

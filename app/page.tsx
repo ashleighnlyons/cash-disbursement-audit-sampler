@@ -22,7 +22,9 @@ export default function Home() {
   const [useThreshold, setUseThreshold] = useState(false);
   const [threshold, setThreshold] = useState("");
   const [reportMonths, setReportMonths] = useState("12");
+  const [excludedVendorNames, setExcludedVendorNames] = useState("");
   const selectedSource = sourceDetails[sourceSystem];
+  const excludedVendorTerms = excludedVendorNames.split(/[,;\n]+/).map((name) => name.trim()).filter(Boolean);
 
   function choose(next: File | null) {
     if (!next) return;
@@ -50,6 +52,7 @@ export default function Home() {
         hudProfile,
         minimumAmount: useThreshold ? Number(threshold || 0) : 0,
         reportMonths: Number(reportMonths),
+        excludedVendorNames,
       });
       const url = URL.createObjectURL(result.blob);
       const anchor = document.createElement("a");
@@ -86,6 +89,7 @@ export default function Home() {
           {auditType === "hud" && <label className="field"><span>HUD sampling profile</span><select value={hudProfile} onChange={(event) => setHudProfile(event.target.value as HudProfile)}><option value="high-5">High importance · 95% confidence · 5% tolerable rate</option><option value="high-10">High importance · 95% confidence · 10% tolerable rate</option><option value="low-5">Low importance · 90% confidence · 5% tolerable rate</option><option value="low-10">Low importance · 90% confidence · 10% tolerable rate</option></select><small>Used for eligible populations over 200; HUD small-population minimums apply otherwise.</small></label>}
           <label className="field"><span>Months included in report</span><select value={reportMonths} onChange={(event) => setReportMonths(event.target.value)}>{Array.from({ length: 12 }, (_, index) => index + 1).map((months) => <option key={months} value={months}>{months} month{months === 1 ? "" : "s"}{months === 12 ? " · Full year" : " · Annualize population"}</option>)}</select><small>{reportMonths === "12" ? "Full-year population; no adjustment needed." : `Population will be annualized using 12 ÷ ${reportMonths}.`}</small></label>
           <label className="threshold"><input type="checkbox" checked={useThreshold} onChange={(event) => setUseThreshold(event.target.checked)}/><span>Exclude disbursements under</span><div className="moneyInput"><b>$</b><input aria-label="Minimum disbursement amount" type="number" min="0" step="0.01" placeholder="0.00" value={threshold} disabled={!useThreshold} onChange={(event) => setThreshold(event.target.value)}/></div></label>
+          <label className="field vendorField"><span>Exclude vendors matching</span><input type="text" placeholder="e.g., Comcast, Lowe's" value={excludedVendorNames} onChange={(event) => setExcludedVendorNames(event.target.value)}/><small>Optional. Separate multiple vendors with commas. Close spellings and names containing the entered words will also match.</small></label>
           <div className="sectionLabel">Choose {selectedSource.name} report</div>
           <button type="button" className={`dropzone ${file ? "hasFile" : ""}`} onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}><input ref={inputRef} type="file" accept=".xlsx" hidden onChange={(event) => choose(event.target.files?.[0] || null)}/><span className="uploadIcon">↥</span>{file ? <><strong>{file.name}</strong><small>{(file.size / 1024).toFixed(0)} KB · Ready to process</small></> : <><strong>Drop your {selectedSource.name} report here</strong><small>{selectedSource.report} · .xlsx only</small></>}</button>
           <button type="button" className="generate" disabled={!file || stage === "processing"} onClick={generate}>{stage === "processing" ? "Processing in browser…" : "Generate audit sample"}<span>→</span></button>
@@ -99,7 +103,7 @@ export default function Home() {
           <div className="rule"><span className="ruleIcon">#</span><div><b>One disbursement per selection</b><small>Related expense lines remain together</small></div></div>
           <div className="rule"><span className="ruleIcon">12</span><div><b>{reportMonths === "12" ? "Full-year population" : "Annualized population"}</b><small>{reportMonths === "12" ? "No period adjustment" : `Actual eligible count × 12 ÷ ${reportMonths}`}</small></div></div>
           <div className="rule"><span className="ruleIcon">✓</span><div><b>Reproducible selection</b><small>Deterministic hash-based random sample</small></div></div>
-          <div className="exclusions"><h3>Excluded before sampling</h3><span>Carter &amp; Company fees</span><span>Utilities</span><span>Mortgage &amp; debt service</span><span>Tenant utility reimbursements</span>{useThreshold && <span>Disbursements below ${Number(threshold || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>}</div>
+          <div className="exclusions"><h3>Excluded before sampling</h3><span>Carter &amp; Company fees</span><span>Utilities</span><span>Mortgage &amp; debt service</span><span>Tenant utility reimbursements</span>{useThreshold && <span>Disbursements below ${Number(threshold || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>}{excludedVendorTerms.map((name) => <span key={name}>Vendor match: {name}</span>)}</div>
         </aside>
       </div>
     </section>
