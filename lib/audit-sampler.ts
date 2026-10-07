@@ -210,6 +210,27 @@ export async function generateAuditWorkbook(
     ["Generated", new Date()],
   ]);
 
+  const selectionHeaders = ["Selection #", "Check Control", "Check #", "Check Date", "Payee(s)", "Disbursement Amount", "Payable Control(s)", "Invoice #(s)", "Account(s)", "Exception Status"];
+  const selectionRows: Row[] = selected.map((payment, index) => [
+    index + 1,
+    payment.checkControl,
+    payment.checkNo,
+    payment.checkDate,
+    payment.payees,
+    payment.amount,
+    payment.payableControls,
+    payment.invoices,
+    payment.accounts,
+    "",
+  ]);
+  addSheet(
+    workbook,
+    "Selections",
+    [selectionHeaders, ...selectionRows],
+    [12, 15, 12, 14, 28, 18, 32, 32, 42, 20],
+    sourceSystem === "onesite" ? [6] : [],
+  );
+
   const detailHeaders = ["Selection #", "Source Row", "Account Code", "Account Name", "Payee Code", "Payee Name", "Payable Control", "Batch", "Property", "Invoice #", "Invoice Date", "Period", "Payment Method", "Amount", "Check Control", "Check #", "Check Date", "Notes"];
   const invoiceRows: Row[] = [];
   selected.forEach((payment, index) => {
@@ -235,16 +256,16 @@ export async function generateAuditWorkbook(
       invoice.notes,
     ]));
   });
-  const selectionsSheet = addSheet(
+  const invoiceBreakoutSheet = addSheet(
     workbook,
-    "Selections",
+    "Selections - Invoice breakout",
     [detailHeaders, ...invoiceRows],
     [13, 12, 15, 29, 16, 29, 17, 12, 13, 30, 15, 13, 16, 17, 16, 13, 15, 43],
     [4],
   );
   for (let row = 2; row <= invoiceRows.length + 1; row += 1) {
     for (const column of ["K", "Q"]) {
-      const cell = selectionsSheet[`${column}${row}`];
+      const cell = invoiceBreakoutSheet[`${column}${row}`];
       if (cell?.v instanceof Date) cell.z = "mm-dd-yy";
     }
   }
